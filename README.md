@@ -20,10 +20,10 @@ Future:
 Deployed at [FSX Golf Shoft Viewer](https://fsx-golf-shot-viewer.streamlit.app/)
 
 Input:
-![image](screenshots/v0.2_img1.png)
+![image](screenshots/screenshot_v0.2_img1.png)
 
 Display:
-![image](screenshots/v0.2_img2.png)
+![image](screenshots/screenshot_v0.2_img2.png)
 
 ## Install
 
