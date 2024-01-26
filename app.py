@@ -50,7 +50,6 @@ else:
     fig = go.Figure()
 
     club_names = df_shots['ClubName'].drop_duplicates().values
-    #club_names = ['Sand Wedge', 'Gap Wedge', 'Pitching wedge'] #, '58']
     club_color_mapper = dict(df_shots[['ClubName', 'ClubColor']].drop_duplicates().values)
 
 
@@ -74,8 +73,9 @@ else:
         st.session_state['selected_clubs'] = {}
     ## Toggle state of club
     def update_club_state(club_name):
-        current_val = st.session_state['selected_clubs'][club_name]
-        st.session_state['selected_clubs'][club_name] = not current_val
+        if club_name in st.session_state['selected_clubs']:
+            current_val = st.session_state['selected_clubs'][club_name]
+            st.session_state['selected_clubs'][club_name] = not current_val
 
     st.header("Select Clubs")
     for club_name in club_names:
