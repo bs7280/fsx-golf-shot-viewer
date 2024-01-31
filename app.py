@@ -5,6 +5,8 @@ import plotly.figure_factory as ff
 import json
 from plotly import graph_objects as go
 from io import StringIO
+from scipy import stats
+
 #from plotly.colors import DEFAULT_PLOTLY_COLORS
 #from sklearn.datasets import load_iris
 #from sklearn.decomposition import PCA
@@ -15,22 +17,27 @@ from golfmodel.model import golf_ballstics
 from golfmodel.utils import calc_landing_fsx
 
 content = None
-
+default_file_name = 'example_data/ex_shot_data_wedges.json'
 uploaded_file = st.file_uploader("Choose a file")
-if uploaded_file is not None:
-    # To read file as bytes:
-    #bytes_data = uploaded_file.getvalue()
-    #st.write(bytes_data)
 
-    # To convert to a string based IO:
+if uploaded_file is not None:
     stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
     #st.write(stringio)
 
     content = json.load(stringio)
+    uploaded_fname = uploaded_file.name
+    st.session_state['data_name'] = uploaded_fname
+    st.write(f"Set data_name to {uploaded_fname}")
 else:
-    with open('example_data/ex_shot_data_wedges.json', 'r') as f:
+    uploaded_fname = default_file_name
+    with open(default_file_name, 'r') as f:
         content = json.load(f)
+    st.session_state['data_name'] = uploaded_fname
     st.warning('Using default example data, upload your own data above', icon="⚠️")
+
+if st.session_state['data_name'] != uploaded_fname:
+    st.session_state['selected_clubs'] = {}
+    
 
 ## Air resistance model: 
 golf_m = golf_ballstics()
@@ -45,13 +52,15 @@ else:
 
     df_shots = get_shot_df(content)
 
+    st.write(df_shots.head(3))
+
     #df_shots = df_shots.head(100)
 
     fig = go.Figure()
 
-    club_names = df_shots['ClubName'].drop_duplicates().values
+    #club_names = df_shots['ClubName'].drop_duplicates().values
     club_color_mapper = dict(df_shots[['ClubName', 'ClubColor']].drop_duplicates().values)
-
+    club_names = list(club_color_mapper.keys())
 
     st.header("Filter Data")
     dt_min, dt_max = st.slider('Select shot time',
@@ -71,20 +80,25 @@ else:
     ## State for checkboxes
     if 'selected_clubs' not in st.session_state:
         st.session_state['selected_clubs'] = {}
+
     ## Toggle state of club
     def update_club_state(club_name):
         if club_name in st.session_state['selected_clubs']:
             current_val = st.session_state['selected_clubs'][club_name]
             st.session_state['selected_clubs'][club_name] = not current_val
 
-    st.header("Select Clubs")
+    st.header(f"Select Clubs:")
+    st.session_state['selected_clubs'] = {}
     for club_name in club_names:
-        if club_name not in st.session_state['selected_clubs']:
+        if club_name is not None and club_name not in st.session_state['selected_clubs']:
             st.session_state['selected_clubs'][club_name] = True
-
-        st.checkbox(club_name, value=True, on_change=update_club_state, args=(club_name,))
+        if club_name is not None:
+            st.checkbox(club_name, value=True, on_change=update_club_state, args=(club_name,))
     # Gets list of selected clubs
     active_clubs = [k for k,v in st.session_state['selected_clubs'].items() if v]
+
+    #option = st.multiselect('Select three known variables:', [c for c in club_names if c])
+    #print(option)
 
     ## Filter data from inputs
     df_shots = df_shots.loc[
@@ -110,8 +124,6 @@ else:
 
         return sd
 
-
-
     if wind_mph > 0:
         new_content = add_wind_calcs(content, wind_speed=wind_mph, wind_direction=wind_direction)
         df_shots = get_shot_df(new_content)
@@ -124,8 +136,12 @@ else:
         color = club_color_mapper[club_name]
         color = color.replace('0xff', '#')
 
-        x_data = df_shots.loc[df_shots.ClubName==club_name].Offline.values
-        y_data = df_shots.loc[df_shots.ClubName==club_name].Carry.values
+        df_club = df_shots.loc[df_shots.ClubName==club_name]
+
+        df_club = df_club[np.abs(stats.zscore(df_club.Carry)) < 3]
+
+        x_data = df_club.Offline.values
+        y_data = df_club.Carry.values
 
         # Calculate Avg Values
         shot_data_avg[club_name] = {}
@@ -152,6 +168,8 @@ else:
     fig.update_layout(height=700)
 
     st.plotly_chart(fig,use_container_width=True, height=700)
+    
+
     #fig.show()
 
     #st.plotly_chart(fig, use_container_width=True)

@@ -82,7 +82,7 @@ def get_shot_df(shot_data_raw):
     df['Offline'] = df['FlightData.OfflineDistance_M'] * METERS_TO_YARDS
     df['Ballspeed'] = df['BallData.BallSpeed_MS'] * MPS_to_MPH
 
-    df_shots = df[['Timestamp', 'ClubName', 'ClubColor', 'Ballspeed', 'Carry', 'Total', 'Offline']]
+    df_shots = df[['Timestamp', 'ClubName', 'ClubType', 'ClubColor', 'Ballspeed', 'Carry', 'Total', 'Offline']]
 
     df_shots.Timestamp = pd.to_datetime(shot_data_raw['SessionStartDate'] + ' ' + df_shots.Timestamp)
 
