@@ -29,8 +29,9 @@ class golf_ballstics():
 
     """
     
-    def __init__(self):
-        
+    def __init__(self, hyper_params = {}, verbose=False):
+        self.verbose = verbose
+
         # golf ball properties
         self.mass = None
         self.radius = None
@@ -38,6 +39,13 @@ class golf_ballstics():
         # golf ball aerodynamic properties
         self.sn_Cl=[[0,0.04,0.1,0.2,0.4],
                     [0,0.1,0.16,0.23,0.33]]
+        
+
+        #cd=0.24+0.18*self.effective_spin(spin_rps, v)
+        self.hyper_params = {}
+        self.hyper_params['Cd_b'] = hyper_params.get('Cd_b', 0.24)
+        self.hyper_params['Cd_m'] = hyper_params.get('Cd_m', 0.18)
+        self.hyper_params['Cl_alpha'] = hyper_params.get('Cl_alpha', 0.52223327)
         
         # air properties
         self.rho = None
@@ -99,7 +107,7 @@ class golf_ballstics():
         self.rho = rho
         self.g = g
         
-        self.spin = spin_rpm/60 # revolutions per second
+        self.spin_rps = spin_rpm/60 # revolutions per second
         self.spin_angle = spin_angle_deg/180*np.pi
         
         # Ball velocity vector
@@ -209,31 +217,62 @@ class golf_ballstics():
         area = np.pi*self.radius**2
         return self.rho*area/(2*self.mass)
     
-    
-    def effective_spin(self, v):
+    def spin_rate_decay(self, t, initial_spin_rate):
+        """
+        Exponential decay model for spin rate.
+        
+        Parameters:
+        - t: Time elapsed (in seconds).
+        - initial_spin_rate: Initial spin rate of the golf ball.
+        
+        Returns:
+        - spin_rate: Spin rate at time t.
+        """
+        decay_constant = 1 / 30  # Decay constant determining the rate of decay
+        spin_rate = initial_spin_rate * np.exp(-t * decay_constant)
+        return spin_rate
+
+    def effective_spin(self, spin_rps, v):
         """ Effective spin used in calculation of drag and lift """
-        sn=self.spin*2*np.pi*self.radius/v
+        #sn=self.spin*2*np.pi*self.radius/v
+        sn=spin_rps*2*np.pi*self.radius/v
         return sn
         
-        
-    def Cd(self, v):        
+    def Cd(self, v, spin_rps):        
         """ Drag coefficient """
         
         # From ??
-        cd=0.24+0.18*self.effective_spin(v)
+        #cd=0.24+0.18*self.effective_spin(spin_rps, v)
+        b = self.hyper_params['Cd_b'] #= 0.24
+        m = self.hyper_params['Cd_m'] #= 0.18
+
+        # Y = mx + b 
+        # Where:
+        #   y = Drag coefficient
+        #   m (paper set to 0.18)
+        #   b (paper set to 0.24)
+        #   x : Effective spin
+        cd=b+m*self.effective_spin(spin_rps, v)
         
         # From MacDonald and Hanzely (Based on Erlicson paper)
         #cd = 0.3048*46/v
 
         return cd
         
+    def coef_lift(self, spin_rps, v,):
+        a = self.hyper_params['Cl_alpha']
+        b = 0
+        s = self.effective_spin(spin_rps, v)
+        return a * np.sqrt(s) + b
         
-    def Cl(self, v):
+    def Cl(self, v, spin_rps):
         """ Lift coefficient """
         
         # From A.J. Smiths (1994)
-        cl=np.interp(x=self.effective_spin(v), xp=self.sn_Cl[0], fp=self.sn_Cl[1])
+        #cl=np.interp(x=self.effective_spin(spin_rps, v), xp=self.sn_Cl[0], fp=self.sn_Cl[1])
         
+        cl = self.coef_lift(spin_rps, v)
+
         # From MacDonald and Hanzely (Based on Erlicson paper)
         #cl = 0.3048*33.4/v
 
@@ -255,8 +294,17 @@ class golf_ballstics():
         # ODE coefficients
         a = self.spin_angle
         B = self.B()
-        Cl = self.Cl(u)
-        Cd = self.Cd(u)
+
+        # Adding spin decay
+        spin_t = self.spin_rate_decay(t, self.spin_rps)
+
+        Cl = self.Cl(u, spin_t)
+        Cd = self.Cd(u, spin_t)
+
+        if self.verbose:
+            print(f"t: {t:,.4f} vx: {vx:,.2f} vy: {vy:.2f}, v_rel: {u:,.3f} --- Cd: {Cd:,.3f} Cl: {Cl:,.3f}")
+        #print("Cl", Cl)
+        #print("Cd", Cd)
         
         # ODE equations
         ux, uy, uz = v_rel
@@ -287,3 +335,38 @@ class golf_ballstics():
         self.df_simres['v_y']= self.simres[:,4] 
         self.df_simres['v_z']= self.simres[:,5]
         
+if __name__ == '__main__':
+    mph_to_ms = 0.44704 # 1 mph = 0.447m/s
+    meters_to_yards = 1.09361
+
+    def cal_golf_landing_mph(
+        velocity=145,
+        launch_angle_deg=10,
+        off_center_angle_deg=-2.3,
+        spin_rpm=3300,
+        spin_angle_deg=3.1,
+        windspeed=0,
+        windheading_deg=100):
+
+        golf_m = golf_ballstics(verbose=False, hyper_params={
+            'Cd_b': 0.23, 'Cl_alpha': 0.52223327 * 1.1})
+
+        y_distance, x_distance = golf_m.get_landingpos(
+            velocity=velocity*mph_to_ms, 
+            launch_angle_deg=launch_angle_deg,
+            off_center_angle_deg=off_center_angle_deg, 
+            spin_rpm=spin_rpm,
+            spin_angle_deg=-1 * spin_angle_deg,
+            windspeed=windspeed * mph_to_ms,
+            windheading_deg=windheading_deg)
+
+        # Convert ouput to Yards from Meters
+        y_yards = meters_to_yards * y_distance
+        x_yards = meters_to_yards * x_distance
+        return x_yards, y_yards
+        #print('Ball lands at ({},{})'.format(y_yards, x_yards))
+
+
+    landing = cal_golf_landing_mph()#off_center_angle_deg=-2, spin_angle_deg=0)
+
+    print(f"Landing: {landing}")
